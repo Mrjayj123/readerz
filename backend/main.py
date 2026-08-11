@@ -10,7 +10,7 @@ import schemas
 from database import engine, get_db, Base
 from auth import hash_password, verify_password, create_access_token, decode_access_token
 from seed import seed_data
-from providers import gutenberg, openlibrary, news
+from providers import gutenberg, openlibrary, googlebooks, news, standardebooks
 
 Base.metadata.create_all(bind=engine)
 
@@ -182,6 +182,20 @@ def books_search(
             count += o["count"]
     except httpx.HTTPError:
         pass
+    try:
+        if source in ("all", "googlebooks"):
+            gb = googlebooks.search(q, page=page)
+            results += gb["results"]
+            count += gb["count"]
+    except httpx.HTTPError:
+        pass
+    try:
+        if source in ("all", "standardebooks"):
+            se = standardebooks.search(q, page=page)
+            results += se["results"]
+            count += se["count"]
+    except httpx.HTTPError:
+        pass
 
     saved = _saved_lookup(db, user, "book")
     for r in results:
@@ -241,6 +255,42 @@ def openlibrary_book_detail(
     saved = _saved_lookup(db, user, "book")
     result["saved"] = ("openlibrary", work_key) in saved
     return result
+@app.get("/api/books/googlebooks/{volume_id}", response_model=schemas.BookResult)
+def googlebooks_book_detail(
+    volume_id: str,
+    db: Session = Depends(get_db),
+    user: Optional[models.User] = Depends(get_current_user_optional),
+):
+    try:
+        result = googlebooks.get_volume(volume_id)
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="Could not reach Google Books right now")
+    saved = _saved_lookup(db, user, "book")
+    result["saved"] = ("googlebooks", volume_id) in saved
+    return result
+@app.get("/api/books/standardebooks/{slug:path}", response_model=schemas.BookPage)
+def standardebooks_book_page(
+    slug: str,
+    page: int = 1,
+    db: Session = Depends(get_db),
+    user: Optional[models.User] = Depends(get_current_user_optional),
+):
+    try:
+        result = standardebooks.get_book_page(slug, page=page)
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="Could not reach Standard Ebooks right now")
+    if not result.get("paragraphs"):
+        raise HTTPException(status_code=404, detail="Book text not available")
+
+    saved = _saved_lookup(db, user, "book")
+    result["saved"] = ("standardebooks", slug) in saved
+
+    if not user:
+        result["locked"] = result["page"] > 1 or result["total_pages"] > 1
+        if result["page"] == 1:
+            result["paragraphs"] = result["paragraphs"][:6]
+    return result
+
 
 
 # ---------- news ----------

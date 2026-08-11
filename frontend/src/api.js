@@ -59,8 +59,8 @@ export const api = {
   booksFeatured: () =>
     fetch(`${BASE}/books/featured`, { headers: { ...authHeaders() } }).then(handle),
 
-  gutenbergPage: (id, page = 1) =>
-    fetch(`${BASE}/books/gutenberg/${id}?page=${page}`, { headers: { ...authHeaders() } }).then(handle),
+  bookPage: (source, id, page = 1) =>
+  fetch(`${BASE}/books/${source}/${id}?page=${page}`, { headers: { ...authHeaders() } }).then(handle),
 
   openLibraryBook: (workKey) =>
     fetch(`${BASE}/books/openlibrary/${workKey}`, { headers: { ...authHeaders() } }).then(handle),

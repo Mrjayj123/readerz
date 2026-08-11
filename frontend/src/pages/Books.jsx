@@ -115,6 +115,7 @@ export default function Books() {
           ['all', 'All sources'],
           ['gutenberg', 'Read in-app (public domain)'],
           ['openlibrary', 'Open Library'],
+          ['googlebooks', 'Google Books'],
         ].map(([id, label]) => (
           <button
             key={id}
