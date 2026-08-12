@@ -10,7 +10,7 @@ import schemas
 from database import engine, get_db, Base
 from auth import hash_password, verify_password, create_access_token, decode_access_token
 from seed import seed_data
-from providers import gutenberg, openlibrary, googlebooks, news, standardebooks
+from providers import gutenberg, openlibrary, googlebooks, news
 
 Base.metadata.create_all(bind=engine)
 

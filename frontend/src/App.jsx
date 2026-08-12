@@ -12,6 +12,7 @@ import Profile from './pages/Profile';
 import Books from './pages/Books';
 import BookReader from './pages/BookReader';
 import News from './pages/News';
+import { ThemeProvider } from './context/ThemeContext';
 
 function Shell() {
   const [search, setSearch] = useState('');
@@ -45,8 +46,10 @@ function Shell() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Shell />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <Shell />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
