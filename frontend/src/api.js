@@ -56,8 +56,8 @@ export const api = {
     return fetch(`${BASE}/books/search?${params}`, { headers: { ...authHeaders() } }).then(handle);
   },
 
-  booksFeatured: () =>
-    fetch(`${BASE}/books/featured`, { headers: { ...authHeaders() } }).then(handle),
+  booksFeatured: (page = 1) =>
+  fetch(`${BASE}/books/featured?page=${page}`, { headers: { ...authHeaders() } }).then(handle),
 
   bookPage: (source, id, page = 1) =>
   fetch(`${BASE}/books/${source}/${id}?page=${page}`, { headers: { ...authHeaders() } }).then(handle),

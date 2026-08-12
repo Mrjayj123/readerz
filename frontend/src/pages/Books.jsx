@@ -1,8 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useReveal } from '../hooks/useReveal';
+
+const SOURCE_LABELS = {
+  gutenberg: 'Read in-app · public domain',
+  openlibrary: 'Open Library',
+  googlebooks: 'Google Books',
+};
 
 function BookCard({ book, onToggleSave }) {
   const navigate = useNavigate();
@@ -30,7 +36,7 @@ function BookCard({ book, onToggleSave }) {
         {book.cover_url ? <img src={book.cover_url} alt="" loading="lazy" /> : <div className="thumb-fallback" />}
       </div>
       <div className="article-card__body">
-        <span className="eyebrow">{canReadInApp ? 'Read in-app · public domain' : 'Open Library'}</span>
+        <span className="eyebrow">{SOURCE_LABELS[book.source] || book.source}</span>
         <h4>{book.title}</h4>
         <p className="excerpt">{book.author}</p>
         {!canReadInApp && (
@@ -43,20 +49,82 @@ function BookCard({ book, onToggleSave }) {
   );
 }
 
+function bookKey(b) {
+  return `${b.source}-${b.external_id}`;
+}
+
 export default function Books() {
   const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [source, setSource] = useState('all');
   const [results, setResults] = useState([]);
-  const [featured, setFeatured] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // ---- endless-scroll discovery grid (shown when there's no active search) ----
+  const [discover, setDiscover] = useState([]);
+  const [discoverPage, setDiscoverPage] = useState(1);
+  const [discoverHasMore, setDiscoverHasMore] = useState(true);
+  const [discoverInitialLoading, setDiscoverInitialLoading] = useState(true);
+  const [discoverLoadingMore, setDiscoverLoadingMore] = useState(false);
+  const sentinelRef = useRef(null);
+  const loadingMoreRef = useRef(false);
+
+  const isSearching = query.trim().length > 0;
+
+  useReveal([results, discover]);
+
   useEffect(() => {
-    api.booksFeatured().then((d) => setFeatured(d.results)).catch(() => {});
+    setDiscover([]);
+    setDiscoverPage(1);
+    setDiscoverHasMore(true);
+    setDiscoverInitialLoading(true);
+    api
+      .booksFeatured(1)
+      .then((d) => {
+        setDiscover(d.results);
+        setDiscoverHasMore(d.results.length > 0);
+      })
+      .catch(() => setDiscoverHasMore(false))
+      .finally(() => setDiscoverInitialLoading(false));
   }, [user]);
 
-  useReveal([results, featured]);
+  async function fetchNextDiscoverPage() {
+    if (loadingMoreRef.current || !discoverHasMore || isSearching) return;
+    loadingMoreRef.current = true;
+    setDiscoverLoadingMore(true);
+    const nextPage = discoverPage + 1;
+    try {
+      const d = await api.booksFeatured(nextPage);
+      setDiscover((prev) => {
+        const seen = new Set(prev.map(bookKey));
+        const fresh = d.results.filter((b) => !seen.has(bookKey(b)));
+        return [...prev, ...fresh];
+      });
+      setDiscoverPage(nextPage);
+      setDiscoverHasMore(d.results.length > 0);
+    } catch {
+      setDiscoverHasMore(false);
+    } finally {
+      setDiscoverLoadingMore(false);
+      loadingMoreRef.current = false;
+    }
+  }
+
+  useEffect(() => {
+    if (isSearching) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) fetchNextDiscoverPage();
+      },
+      { rootMargin: '600px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSearching, discoverPage, discoverHasMore]);
 
   async function runSearch(e) {
     e?.preventDefault();
@@ -129,25 +197,50 @@ export default function Books() {
 
       {error && <p className="form-error">{error}</p>}
 
-      {loading ? (
-        <div className="grid-skeleton">
-          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton-card" />)}
-        </div>
-      ) : query.trim() ? (
-        <div className="grid">
-          {results.map((b) => (
-            <BookCard key={`${b.source}-${b.external_id}`} book={b} onToggleSave={(bk) => toggleSave(bk, results, setResults)} />
-          ))}
-          {!results.length && <div className="empty" style={{ gridColumn: '1/-1' }}><h3>No results</h3><p>Try a different title or author.</p></div>}
-        </div>
+      {isSearching ? (
+        loading ? (
+          <div className="grid-skeleton">
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton-card" />)}
+          </div>
+        ) : (
+          <div className="grid">
+            {results.map((b) => (
+              <BookCard key={bookKey(b)} book={b} onToggleSave={(bk) => toggleSave(bk, results, setResults)} />
+            ))}
+            {!results.length && <div className="empty" style={{ gridColumn: '1/-1' }}><h3>No results</h3><p>Try a different title or author.</p></div>}
+          </div>
+        )
       ) : (
         <>
-          <p className="muted" style={{ marginBottom: 18 }}>Popular public-domain titles you can read right now, in full, for free.</p>
-          <div className="grid">
-            {featured.map((b) => (
-              <BookCard key={`${b.source}-${b.external_id}`} book={b} onToggleSave={(bk) => toggleSave(bk, featured, setFeatured)} />
-            ))}
-          </div>
+          <p className="muted" style={{ marginBottom: 18 }}>Public-domain titles you can read right now, in full, for free — keep scrolling for more.</p>
+
+          {discoverInitialLoading ? (
+            <div className="grid-skeleton">
+              {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton-card" />)}
+            </div>
+          ) : (
+            <>
+              <div className="grid">
+                {discover.map((b) => (
+                  <BookCard key={bookKey(b)} book={b} onToggleSave={(bk) => toggleSave(bk, discover, setDiscover)} />
+                ))}
+              </div>
+
+              {discoverHasMore && (
+                <div ref={sentinelRef} className="discover-sentinel">
+                  {discoverLoadingMore && (
+                    <div className="grid-skeleton" style={{ marginTop: 20 }}>
+                      {Array.from({ length: 3 }).map((_, i) => <div key={i} className="skeleton-card" />)}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!discoverHasMore && discover.length > 0 && (
+                <p className="muted" style={{ textAlign: 'center', marginTop: 28 }}>You've reached the end — for now.</p>
+              )}
+            </>
+          )}
         </>
       )}
     </section>

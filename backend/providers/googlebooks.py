@@ -18,10 +18,10 @@ API_KEY = os.environ.get("GOOGLE_BOOKS_API_KEY")
 def _cover(image_links):
     if not image_links:
         return None
-    return (
-        image_links.get("thumbnail")
-        or image_links.get("smallThumbnail")
-    )
+    url = image_links.get("thumbnail") or image_links.get("smallThumbnail")
+    if url and url.startswith("http://"):
+        url = "https://" + url[len("http://"):]
+    return url
 
 
 def _external_url(volume_info, item_id):

@@ -10,7 +10,7 @@ import schemas
 from database import engine, get_db, Base
 from auth import hash_password, verify_password, create_access_token, decode_access_token
 from seed import seed_data
-from providers import gutenberg, openlibrary, googlebooks, news
+from providers import gutenberg, openlibrary, news, googlebooks
 
 Base.metadata.create_all(bind=engine)
 
@@ -189,13 +189,6 @@ def books_search(
             count += gb["count"]
     except httpx.HTTPError:
         pass
-    try:
-        if source in ("all", "standardebooks"):
-            se = standardebooks.search(q, page=page)
-            results += se["results"]
-            count += se["count"]
-    except httpx.HTTPError:
-        pass
 
     saved = _saved_lookup(db, user, "book")
     for r in results:
@@ -206,17 +199,17 @@ def books_search(
 
 @app.get("/api/books/featured", response_model=schemas.BookSearchResponse)
 def books_featured(
+    page: int = 1,
     db: Session = Depends(get_db), user: Optional[models.User] = Depends(get_current_user_optional)
 ):
     try:
-        g = gutenberg.popular()
+        g = gutenberg.popular(page=page)
     except httpx.HTTPError:
         g = {"count": 0, "results": []}
     saved = _saved_lookup(db, user, "book")
     for r in g["results"]:
         r["saved"] = (r["source"], r["external_id"]) in saved
     return g
-
 
 @app.get("/api/books/gutenberg/{gutenberg_id}", response_model=schemas.BookPage)
 def gutenberg_book_page(
@@ -289,6 +282,19 @@ def standardebooks_book_page(
         result["locked"] = result["page"] > 1 or result["total_pages"] > 1
         if result["page"] == 1:
             result["paragraphs"] = result["paragraphs"][:6]
+    return result
+@app.get("/api/books/googlebooks/{volume_id}", response_model=schemas.BookResult)
+def googlebooks_detail(
+    volume_id: str,
+    db: Session = Depends(get_db),
+    user: Optional[models.User] = Depends(get_current_user_optional),
+):
+    try:
+        result = googlebooks.get_volume(volume_id)
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="Could not reach Google Books right now")
+    saved = _saved_lookup(db, user, "book")
+    result["saved"] = ("googlebooks", volume_id) in saved
     return result
 
 
